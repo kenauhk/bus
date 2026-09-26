@@ -4,34 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>富景花園 巴士到站時間</title>
-    <!-- 這裡控制網頁的外觀（衣服） -->
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; background-color: #f5f5f7; }
         .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h2 { text-align: center; color: #0053a0; margin-top: 0; margin-bottom: 5px; }
         .station-name { text-align: center; color: #666; font-size: 14px; margin-bottom: 20px; }
-        button { width: 100%; padding: 14px; background-color: #ffcc00; color: #003366; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        button { width: 100%; padding: 14px; background-color: #ffcc00; color: #003366; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; }
         button:active { background-color: #e6b800; }
-        .result-item { background: #f8fafc; padding: 15px; margin-top: 12px; border-left: 5px solid #0053a0; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .eta-time { float: right; font-weight: bold; color: #2f855a; font-size: 18px; }
+        .result-item { background: #f8fafc; padding: 14px 16px; margin-top: 10px; border-left: 5px solid #0053a0; border-radius: 6px; }
+        .route { font-weight: bold; font-size: 17px; }
+        .eta { float: right; color: #2f855a; font-weight: bold; font-size: 16px; text-align: right; }
         .error { color: #e53e3e; text-align: center; margin-top: 15px; font-weight: bold; }
         .loading { text-align: center; margin-top: 15px; color: #4a5568; }
     </style>
 </head>
 <body>
-
-<!-- 這裡控制網頁的內容與按鈕（骨架） -->
 <div class="container">
     <h2>富景花園 巴士查詢</h2>
-    <div class="station-name">📍 車站：富景花園 (全部城巴路線)</div>
+    <div class="station-name">📍 富景花園, 小西灣道</div>
     
-    <button onclick="getStationAllETA()">🔄 重新整理時間</button>
+    <button onclick="getStationAllETA()">🔄 重新整理</button>
     
-    <div id="loading" class="loading" style="display:none;">正在連線政府數據庫...</div>
+    <div id="loading" class="loading" style="display:none;">正在連線...</div>
     <div id="results"></div>
 </div>
 
-<!-- 這裡就是大腦（你截圖裡的那段 JavaScript） -->
 <script>
 async function getStationAllETA() {
     const resultsDiv = document.getElementById('results');
@@ -39,11 +36,8 @@ async function getStationAllETA() {
     resultsDiv.innerHTML = '';
     loadingDiv.style.display = 'block';
 
-    // ⚠️ 這裡填入你之前在 Cloudflare 申請到的專屬網址（如果還沒申請，可以先空著測試）
-   const myProxyUrl = 'https://lingering-snow-f7bd.ken-au-hk.workers.dev/';
-    
-    // 政府提供富景花園站（001155）獲取全部路線的官方網址
-    const targetUrl = 'https://data.gov.hk';
+    const myProxyUrl = 'https://lingering-snow-f7bd.ken-au-hk.workers.dev/';
+    const targetUrl = 'https://rt.data.gov.hk/v1/transport/batch/stop-eta/CTB/001370';
 
     try {
         const response = await fetch(`${myProxyUrl}?url=${encodeURIComponent(targetUrl)}`);
@@ -53,52 +47,50 @@ async function getStationAllETA() {
         loadingDiv.style.display = 'none';
 
         if (resData.data && resData.data.length > 0) {
-            const etaList = [];
             const now = new Date();
+            const routeMap = {};
 
             resData.data.forEach(item => {
-                if (!item.eta) return; 
-                
-                const etaTime = new Date(item.eta);
-                const diffMins = Math.max(0, Math.floor((etaTime - now) / 1000 / 60));
-                
-                etaList.push({
-                    route: item.route,
-                    dest: item.dest_tc,
-                    mins: diffMins,
-                    rmk: item.rmk_tc || '即時更新'
-                });
+                if (!item.eta) return;
+                const mins = Math.max(0, Math.floor((new Date(item.eta) - now) / 60000));
+                const key = item.route + '|' + (item.dest || '');
+
+                if (!routeMap[key]) {
+                    routeMap[key] = { route: item.route, dest: item.dest || '', etas: [] };
+                }
+                routeMap[key].etas.push(mins);
             });
 
-            // 依照時間由近到遠排序
-            etaList.sort((a, b) => a.mins - b.mins);
+            const routeList = Object.values(routeMap)
+                .map(r => { r.etas.sort((a,b)=>a-b); return r; })
+                .sort((a,b) => a.etas[0] - b.etas[0]);
 
-            // 顯示在畫面上
-            etaList.forEach(bus => {
+            routeList.forEach(bus => {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = 'result-item';
-                // 如果是 788 號線，特別把字體放大並變成紅色
-                const isMainRoute = bus.route === '788' ? 'style="color: #d9381e; font-size: 20px;"' : '';
-                
+
+                const next1 = bus.etas[0] + ' 分鐘';
+                const next2 = bus.etas[1] !== undefined ? bus.etas[1] + ' 分鐘' : '—';
+
+                const isMain = bus.route === '788' ? 'style="color:#d9381e"' : '';
+
                 itemDiv.innerHTML = `
-                    <span ${isMainRoute}><strong>${bus.route}</strong> 往 ${bus.dest}</span>
-                    <span class="eta-time">${bus.mins} 分鐘 <br><small style="font-size:11px; color:#aaa; font-weight:normal;">(${bus.rmk})</small></span>
+                    <span class="route" ${isMain}>${bus.route} 往 ${bus.dest}</span>
+                    <span class="eta">${next1}<br><small style="font-weight:normal;color:#718096">${next2}</small></span>
                 `;
                 resultsDiv.appendChild(itemDiv);
             });
             
         } else {
-            resultsDiv.innerHTML = '<div class="error">目前沒有巴士即將到站</div>';
+            resultsDiv.innerHTML = '<div class="error">目前沒有即將到站的巴士</div>';
         }
     } catch (error) {
         loadingDiv.style.display = 'none';
-        resultsDiv.innerHTML = `<div class="error">讀取失敗: ${error.message}<br><small style="color:gray;font-weight:normal;">提示：如果你是用電腦直接雙擊打開，會因為安全機制被攔截。請將此檔案傳到 iPhone 的「檔案」App 內打開測試。</small></div>`;
+        resultsDiv.innerHTML = `<div class="error">讀取失敗: ${error.message}</div>`;
     }
 }
 
-// 網頁一打開就自動跑一次大腦邏輯
 window.onload = getStationAllETA;
 </script>
-
 </body>
 </html>
